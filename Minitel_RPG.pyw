@@ -35,7 +35,7 @@ key_direction_map = {
 
 from image_to_G1_converter import *
 
-player_x, player_y = 1, 1
+player_x, player_y = 2, 4
 
 sprite_player = image_to_G1("player.bmp")
 tiles = image_to_G1("tiles.bmp")
@@ -51,7 +51,7 @@ def load_tmx_map_csv(filename):
     tile_map = [tile_ids[i:i + width] for i in range(0, len(tile_ids), width)]
     return tile_map
 
-current_map = load_tmx_map_csv("map1.tmx")
+current_map = load_tmx_map_csv("map2.tmx")
 
 def open_gui():
     window = tk.Tk()
@@ -123,8 +123,8 @@ def open_gui():
 
     def render_map():
         if ser and ser.is_open:
-            ser.write(b'\x0C')
-            ser.write(b'\x0E')
+            ser.write(b'\x0C') # Efface l'écran
+            ser.write(b'\x0E')  # Sélection du jeu de caractères G1
             data = b""
             for row in range(SCREEN_TILES_HEIGHT):
                 for col in range(SCREEN_TILES_WIDTH):
@@ -194,6 +194,7 @@ def open_gui():
             ser.write(b'\x0E')  # Sélection du jeu de caractères G1
 
             render_map()
+            draw_player(player_x, player_y, key_direction_map.get('S'))
 
             threading.Thread(target=handle_keys, daemon=True).start()
             log_message("Serial connection established.")
