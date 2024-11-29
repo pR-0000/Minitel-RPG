@@ -1,4 +1,4 @@
-import subprocess, threading, time
+import os, subprocess, threading, time
 from datetime import datetime
 
 try:
@@ -22,6 +22,7 @@ version = 0.1
 TILE_WIDTH, TILE_HEIGHT = 8, 9
 X_STEP, Y_STEP = TILE_WIDTH // 2, TILE_HEIGHT // 3
 SCREEN_TILES_HEIGHT, SCREEN_TILES_WIDTH = 8, 10  # Dimensions de l'écran en tuiles (8x10)
+WALKABLE_TILE_LIMIT = 90
 
 DEFAULT_MINITEL_MODEL = "Minitel 1B and later"
 connection_active, ser = False, None
@@ -35,23 +36,93 @@ key_direction_map = {
 
 from image_to_G1_converter import *
 
-player_x, player_y = 2, 4
+player_x, player_y, player_direction = 3, 4, 2
 
 sprite_player = image_to_G1("player.bmp")
 tiles = image_to_G1("tiles.bmp")
+
+def load_tileset_properties(tileset_path, first_gid):
+    tree = ET.parse(tileset_path)
+    root = tree.getroot()
+    tile_properties = {}
+
+    for tile in root.findall("tile"):
+        tile_id = first_gid + int(tile.attrib["id"])
+        properties = {}
+        prop_elem = tile.find("properties")
+        if prop_elem is not None:
+            for prop in prop_elem.findall("property"):
+                name = prop.get("name")
+                value = prop.get("value")
+                properties[name] = value.lower() == "true" if value in ["true", "false"] else value
+        tile_properties[tile_id] = properties
+
+    return tile_properties
 
 def load_tmx_map_csv(filename):
     tree = ET.parse(filename)
     root = tree.getroot()
     width = int(root.attrib['width'])
     height = int(root.attrib['height'])
+    
+    # Charger le calque des tuiles (layer)
     layer = root.find('layer')
     data = layer.find('data').text.strip()
     tile_ids = [int(tile_id) for tile_id in data.split(',')]
     tile_map = [tile_ids[i:i + width] for i in range(0, len(tile_ids), width)]
-    return tile_map
 
-current_map = load_tmx_map_csv("map2.tmx")
+    # Chargement des propriétés de la carte
+    map_properties = {}
+    for prop in root.findall("properties/property"):
+        name = prop.get("name")
+        value = prop.get("value")
+        map_properties[name] = value
+    print(f"Map properties: {map_properties}")
+
+    # Charger les propriétés des tuiles depuis le fichier de tileset externe
+    tile_properties = {}
+    for tileset in root.findall("tileset"):
+        first_gid = int(tileset.attrib.get("firstgid", 1))
+        source = tileset.attrib.get("source")
+        if source:
+            # Charger le fichier .tsx
+            tileset_path = os.path.join(os.path.dirname(filename), source)
+            tile_properties.update(load_tileset_properties(tileset_path, first_gid))
+    print(f"Tile properties: {tile_properties}")
+
+    # Charger les objets et leurs propriétés depuis le calque d'objets
+    objects = []
+    for object_group in root.findall("objectgroup"):
+        for obj in object_group.findall("object"):
+            obj_data = {
+                "id": int(obj.attrib["id"]),
+                "name": obj.attrib.get("name", ""),
+                "type": obj.attrib.get("type", ""),
+                "x": float(obj.attrib["x"]),
+                "y": float(obj.attrib["y"]),
+                "width": float(obj.attrib.get("width", 0)),
+                "height": float(obj.attrib.get("height", 0)),
+                "properties": {}
+            }
+            properties = obj.find("properties")
+            if properties is not None:
+                for prop in properties.findall("property"):
+                    obj_data["properties"][prop.get("name")] = prop.get("value")
+            objects.append(obj_data)
+    print(f"Objects: {objects}")
+
+    return {
+        "map": tile_map,
+        "map_properties": map_properties,
+        "tile_properties": tile_properties,
+        "objects": objects
+    }
+
+map_data = load_tmx_map_csv("map2.tmx")
+tile_map = map_data["map"]
+map_properties = map_data["map_properties"]
+tile_properties = map_data["tile_properties"]
+objects = map_data["objects"]
 
 def open_gui():
     window = tk.Tk()
@@ -123,13 +194,20 @@ def open_gui():
 
     def render_map():
         if ser and ser.is_open:
-            ser.write(b'\x0C') # Efface l'écran
+            ser.write(b'\x0C')  # Efface l'écran
             ser.write(b'\x0E')  # Sélection du jeu de caractères G1
             data = b""
+            
             for row in range(SCREEN_TILES_HEIGHT):
                 for col in range(SCREEN_TILES_WIDTH):
-                    if row < len(current_map) and col < len(current_map[0]) and current_map[row][col]-1 != 0:
-                        data += get_tile_data(col, row, current_map[row][col])
+                    if row < len(tile_map) and col < len(tile_map[0]) and tile_map[row][col] - 1 != 0:
+                        tile_id = tile_map[row][col]
+                        properties = tile_properties.get(tile_id, {})
+                        if properties.get("blink") == True:
+                            data += b'\x1B\x48'
+                        data += get_tile_data(col, row, tile_id)
+                        if properties.get("blink") == True:
+                            data += b'\x1B\x49'  # Désactive le clignotement
             ser.write(data)
 
     def draw_player(x, y, direction_index):
@@ -144,29 +222,112 @@ def open_gui():
                     data += bytes.fromhex(hex_code)
             ser.write(data)
 
+    def draw_box(x, y, width, height):
+        if ser and ser.is_open:
+            ser.write(b'\x0E')  # Sélection du jeu de caractères G1
+            data = b""
+            tiles = {
+                "top_left": 68,
+                "top": 69,
+                "top_right": 70,
+                "left": 78,
+                "middle": 79,
+                "right": 80,
+                "bottom_left": 88,
+                "bottom": 89,
+                "bottom_right": 90,
+            }
+            data += f"\x1B[{y * Y_STEP};{x * X_STEP}H".encode('utf-8')
+            data += get_tile_data(x, y, tiles["top_left"])
+            for col in range(1, width - 1):
+                data += get_tile_data(x + col, y, tiles["top"])
+            data += get_tile_data(x + width - 1, y, tiles["top_right"])
+            for row in range(1, height - 1):
+                data += f"\x1B[{(y + row) * Y_STEP};{x * X_STEP}H".encode('utf-8')
+                data += get_tile_data(x, y + row, tiles["left"])
+                for col in range(1, width - 1):
+                    data += get_tile_data(x + col, y + row, tiles["middle"])
+                data += get_tile_data(x + width - 1, y + row, tiles["right"])
+            data += f"\x1B[{(y + height - 1) * Y_STEP};{x * X_STEP}H".encode('utf-8')
+            data += get_tile_data(x, y + height - 1, tiles["bottom_left"])
+            for col in range(1, width - 1):
+                data += get_tile_data(x + col, y + height - 1, tiles["bottom"])
+            data += get_tile_data(x + width - 1, y + height - 1, tiles["bottom_right"])
+            ser.write(data)
+
+
+    def execute_scripts(properties):
+##        if "condition" in properties:
+##            condition = properties["condition"]
+##            variable, expected_value = condition.split("==")
+##            variable = variable.strip()
+##            expected_value = expected_value.strip()
+##            if variables.get(variable) == expected_value:
+##                print(f"Condition remplie : {condition}")
+
+        if "message" in properties:
+            draw_box(0, 5, 10, 3)
+            message = properties["message"]
+            print(f"Message : {message}")
+            ser.write(b'\x0F')  # Sélection du jeu de caractères texte
+            ser.write(b'\x1B\x47')  # Caractères blancs
+            ser.write(f"\x1B[18;4H{message}".encode('utf-8'))
+            ser.write(b'\x0E\x1B\x48'+get_tile_data(8, 6, 60)+b'\x1B\x49')
+            while True:
+                key_data = ser.read(1)
+                if key_data.decode('utf-8', errors='ignore') == '\r':
+                    break
+            for row in range(5, 8):
+                for col in range(0, 10):
+                    if row < len(tile_map) and col < len(tile_map[row]):
+                        tile_id = tile_map[row][col]
+                        ser.write(get_tile_data(col, row, tile_id))
+
+##        if "warp" in properties:
+##            warp_data = properties["warp"]
+##            parts = warp_data.split(";")
+##            new_map, new_x, new_y = parts[0], int(parts[1]), int(parts[2])
+##            load_new_map(new_map)
+##            global player_x, player_y
+##            player_x, player_y = new_x, new_y
+##            render_map()
+##            draw_player(player_x, player_y, key_direction_map.get('S'))
+
     def handle_keys():
-        global player_x, player_y
+        global player_x, player_y, player_direction
         while True:
             if ser and ser.is_open:
                 key_data = ser.read(1)
                 if key_data:
                     key = key_data.decode('utf-8', errors='ignore').upper()
                     if key == 'Z' and player_y > 0:
-                        ser.write(get_tile_data(player_x, player_y, current_map[player_y][player_x]))
-                        player_y -= 1
-                        draw_player(player_x, player_y, key_direction_map.get(key))
+                        player_direction = key_direction_map.get(key)
+                        ser.write(get_tile_data(player_x, player_y, tile_map[player_y][player_x]))
+                        if tile_map[player_y-1][player_x] < WALKABLE_TILE_LIMIT: player_y -= 1
+                        draw_player(player_x, player_y, player_direction)
                     elif key == 'S' and player_y < SCREEN_TILES_HEIGHT-1:
-                        ser.write(get_tile_data(player_x, player_y, current_map[player_y][player_x]))
-                        player_y += 1
-                        draw_player(player_x, player_y, key_direction_map.get(key))
+                        player_direction = key_direction_map.get(key)
+                        ser.write(get_tile_data(player_x, player_y, tile_map[player_y][player_x]))
+                        if tile_map[player_y+1][player_x] < WALKABLE_TILE_LIMIT: player_y += 1
+                        draw_player(player_x, player_y, player_direction)
                     elif key == 'Q' and player_x > 0:
-                        ser.write(get_tile_data(player_x, player_y, current_map[player_y][player_x]))
-                        player_x -= 1
-                        draw_player(player_x, player_y, key_direction_map.get(key))
+                        player_direction = key_direction_map.get(key)
+                        ser.write(get_tile_data(player_x, player_y, tile_map[player_y][player_x]))
+                        if tile_map[player_y][player_x-1] < WALKABLE_TILE_LIMIT: player_x -= 1
+                        draw_player(player_x, player_y, player_direction)
                     elif key == 'D' and player_x < SCREEN_TILES_WIDTH-1:
-                        ser.write(get_tile_data(player_x, player_y, current_map[player_y][player_x]))
-                        player_x += 1
-                        draw_player(player_x, player_y, key_direction_map.get(key))
+                        player_direction = key_direction_map.get(key)
+                        ser.write(get_tile_data(player_x, player_y, tile_map[player_y][player_x]))
+                        if tile_map[player_y][player_x+1] < WALKABLE_TILE_LIMIT: player_x += 1
+                        draw_player(player_x, player_y, player_direction)
+                    elif key == '\r':
+                        for obj in objects:
+                            obj_x = int(obj["x"] // TILE_WIDTH)
+                            obj_y = int(obj["y"] // TILE_HEIGHT)
+                            if obj_x == player_x+(player_direction == 1)-(player_direction == 0) and obj_y-1 == player_y+(player_direction == 2)-(player_direction == 3):
+                                properties = obj.get("properties", {})
+                                if properties:
+                                    execute_scripts(properties)
             time.sleep(0.1)
 
     def start_connection():

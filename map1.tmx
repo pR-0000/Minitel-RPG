@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="left-up" width="10" height="8" tilewidth="8" tileheight="9" infinite="0" nextlayerid="2" nextobjectid="1">
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="left-up" width="10" height="8" tilewidth="8" tileheight="9" infinite="0" nextlayerid="4" nextobjectid="13">
  <tileset firstgid="1" source="tiles.tsx"/>
+ <objectgroup id="3" name="Calque d'Objets 1">
+  <object id="12" name="warp01" gid="1" x="72" y="54" width="8" height="9">
+   <properties>
+    <property name="script" value="warp;map2.tmx;2;2"/>
+   </properties>
+  </object>
+ </objectgroup>
  <layer id="1" name="Calque de Tuiles 1" width="10" height="8">
   <data encoding="csv">
 91,92,92,92,92,92,92,92,92,93,
