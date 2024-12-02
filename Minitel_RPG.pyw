@@ -34,6 +34,10 @@ key_direction_map = {
     'Z': 3
 }
 
+variables = {
+    "initial_message": "False"
+}
+
 from image_to_G1_converter import *
 
 player_x, player_y, player_direction = 3, 4, 2
@@ -255,33 +259,60 @@ def open_gui():
             data += get_tile_data(x + width - 1, y + height - 1, tiles["bottom_right"])
             ser.write(data)
 
+    def type_text(x, y, message, speed = 0.05, wrap_width = 29):
+        ser.write(b'\x0F')  # Sélection du jeu de caractères texte
+        ser.write(b'\x1B\x47')  # Caractères blancs
+        current_x, current_y = x, y
+        words = message.split(" ")
+        line_buffer = ""
+        for word in words:
+            if len(line_buffer) + len(word) + 1 > wrap_width:
+                for char in line_buffer:
+                    ser.write(f"\x1B[{current_y};{current_x}H{char}".encode('utf-8'))
+                    current_x += 1
+                    time.sleep(speed)
+                line_buffer = ""
+                current_x = x
+                current_y += 1
+            if line_buffer:
+                line_buffer += " " + word
+            else:
+                line_buffer = word
+        for char in line_buffer:
+            ser.write(f"\x1B[{current_y};{current_x}H{char}".encode('utf-8'))
+            current_x += 1
+            time.sleep(speed)
+        ser.write(b'\x0E\x1B\x48'+get_tile_data(8, 6, 60)+b'\x1B\x49')  # Jeu de caractères mosaïque G1 + affichage icône touche entrée clignotante
+        while True:
+            key_data = ser.read(1)
+            if key_data.decode('utf-8', errors='ignore') == '\r':
+                break
 
     def execute_scripts(properties):
-##        if "condition" in properties:
-##            condition = properties["condition"]
-##            variable, expected_value = condition.split("==")
-##            variable = variable.strip()
-##            expected_value = expected_value.strip()
-##            if variables.get(variable) == expected_value:
-##                print(f"Condition remplie : {condition}")
+        if "condition" in properties:
+            condition = properties["condition"]
+            variable, expected_value = condition.split("==")
+            variable = variable.strip()
+            expected_value = expected_value.strip()
+            if variables.get(variable) != expected_value: return
 
         if "message" in properties:
             draw_box(0, 5, 10, 3)
             message = properties["message"]
-            print(f"Message : {message}")
-            ser.write(b'\x0F')  # Sélection du jeu de caractères texte
-            ser.write(b'\x1B\x47')  # Caractères blancs
-            ser.write(f"\x1B[18;4H{message}".encode('utf-8'))
-            ser.write(b'\x0E\x1B\x48'+get_tile_data(8, 6, 60)+b'\x1B\x49')
-            while True:
-                key_data = ser.read(1)
-                if key_data.decode('utf-8', errors='ignore') == '\r':
-                    break
+            type_text(4, 18, properties["message"])
             for row in range(5, 8):
                 for col in range(0, 10):
                     if row < len(tile_map) and col < len(tile_map[row]):
                         tile_id = tile_map[row][col]
                         ser.write(get_tile_data(col, row, tile_id))
+
+        if "assign" in properties:
+            assign = properties["assign"]
+            variable, value = assign.split("=")
+            variable = variable.strip()
+            value = value.strip()
+            variables[variable] = value
+            print(variables.get(variable))
 
 ##        if "warp" in properties:
 ##            warp_data = properties["warp"]
@@ -356,6 +387,7 @@ def open_gui():
 
             render_map()
             draw_player(player_x, player_y, key_direction_map.get('S'))
+            if map_properties: execute_scripts(map_properties)
 
             threading.Thread(target=handle_keys, daemon=True).start()
             log_message("Serial connection established.")
