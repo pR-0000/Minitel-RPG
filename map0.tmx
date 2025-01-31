@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="left-up" width="10" height="8" tilewidth="8" tileheight="9" infinite="0" nextlayerid="2" nextobjectid="1">
+ <properties>
+  <property name="message_intro" value="&quot;Un écho ténu dans la nuit... ~2 Des bips, des murmures électroniques... ~2 Comme un battement oublié, une voix sans visage. ~1 Tu ne sais pas pourquoi, mais tu te lèves. ~1 Quelque chose t'appelle... ~1 Là-haut, dans l'obscurité...&quot;"/>
+ </properties>
+ <tileset firstgid="1" source="tiles.tsx"/>
+ <layer id="1" name="Calque de Tuiles 1" width="10" height="8">
+  <data encoding="csv">
+1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1
+</data>
+ </layer>
+</map>

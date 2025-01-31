@@ -17,7 +17,9 @@ from tkinter import ttk, messagebox
 
 import xml.etree.ElementTree as ET
 
-version = 0.1
+version = 0.11
+
+INITIAL_MAP = "map2.tmx"
 
 TILE_WIDTH, TILE_HEIGHT = 8, 9
 X_STEP, Y_STEP = TILE_WIDTH // 2, TILE_HEIGHT // 3
@@ -40,7 +42,7 @@ variables = {
 
 from image_to_G1_converter import *
 
-player_x, player_y, player_direction = 3, 4, 2
+player_x, player_y, player_direction = 4, 4, 2
 
 sprite_player = image_to_G1("player.bmp")
 tiles = image_to_G1("tiles.bmp")
@@ -122,7 +124,7 @@ def load_tmx_map_csv(filename):
         "objects": objects
     }
 
-map_data = load_tmx_map_csv("map2.tmx")
+map_data = load_tmx_map_csv(INITIAL_MAP)
 tile_map = map_data["map"]
 map_properties = map_data["map_properties"]
 tile_properties = map_data["tile_properties"]
@@ -259,30 +261,58 @@ def open_gui():
             data += get_tile_data(x + width - 1, y + height - 1, tiles["bottom_right"])
             ser.write(data)
 
-    def type_text(x, y, message, speed = 0.05, wrap_width = 29):
-        ser.write(b'\x0F')  # Sélection du jeu de caractères texte
+    def display_text(x, y, text, speed = 0.05, line_width = 29):
+        accent_mapping = {
+            "é": "\x19\x42\x65",
+            "è": "\x19\x41\x65",
+            "à": "\x19\x41\x61",
+            "ù": "\x19\x41\x75",
+            "ç": "\x19\x41\x63",
+            "â": "\x19\x43\x61",
+            "ê": "\x19\x43\x65",
+            "î": "\x19\x43\x69",
+            "ô": "\x19\x43\x6F",
+            "û": "\x19\x43\x75"
+        }
+        ser.write(b'\x0F')  # Mode texte
         ser.write(b'\x1B\x47')  # Caractères blancs
         current_x, current_y = x, y
-        words = message.split(" ")
-        line_buffer = ""
-        for word in words:
-            if len(line_buffer) + len(word) + 1 > wrap_width:
-                for char in line_buffer:
-                    ser.write(f"\x1B[{current_y};{current_x}H{char}".encode('utf-8'))
-                    current_x += 1
-                    time.sleep(speed)
-                line_buffer = ""
-                current_x = x
+        ser.write(f"\x1B[{current_y};{current_x}H".encode("ascii"))
+        words = text.split(" ")
+        buffer = ""
+        for i, word in enumerate(words):
+            # Vérifier si le mot ne dépasse pas la limite de ligne
+            if len(buffer) + len(word) > line_width:
+                buffer = ""
                 current_y += 1
-            if line_buffer:
-                line_buffer += " " + word
-            else:
-                line_buffer = word
-        for char in line_buffer:
-            ser.write(f"\x1B[{current_y};{current_x}H{char}".encode('utf-8'))
-            current_x += 1
+                ser.write(f"\x1B[{current_y};{x}H".encode("ascii"))
+            # Gestion des pauses (~N)
+            if word.startswith("~"):
+                try:
+                    delay_time = float(word[1:])
+                    time.sleep(delay_time)
+                except ValueError:
+                    pass
+                continue
+            # Gestion de l'attente (#)
+            if word == "#":
+                ser.flush()
+                while True:
+                    key_data = ser.read(1)
+                    if key_data.decode('utf-8', errors='ignore') == '\r':
+                        break
+                continue
+            # Conversion des accents et affichage progressif
+            for char in word:
+                char = accent_mapping.get(char, char)
+                ser.write(char.encode("latin-1", errors="ignore"))
+                time.sleep(speed)
+            ser.write(" ".encode("latin-1", errors="ignore"))
             time.sleep(speed)
-        ser.write(b'\x0E\x1B\x48'+get_tile_data(8, 6, 60)+b'\x1B\x49')  # Jeu de caractères mosaïque G1 + affichage icône touche entrée clignotante
+            buffer += word+" "
+        ser.write(f"\x1B\x48\x08\x7F\x1B\x49\x0E".encode('utf-8'))
+        #ser.write(f"\x1B\x48\x1B[{current_y};{current_x}H\x7F\x1B\x49\x0E".encode('utf-8'))
+        #ser.write(b'\x0E\x1B\x48'+get_tile_data(8, 6, 60)+b'\x1B\x49')  # Jeu de caractères mosaïque G1 + affichage icône touche entrée clignotante
         while True:
             key_data = ser.read(1)
             if key_data.decode('utf-8', errors='ignore') == '\r':
@@ -296,10 +326,12 @@ def open_gui():
             expected_value = expected_value.strip()
             if variables.get(variable) != expected_value: return
 
+        if "message_intro" in properties:
+            display_text(2, 8, properties["message_intro"], 0.1, 38)
+
         if "message" in properties:
             draw_box(0, 5, 10, 3)
-            message = properties["message"]
-            type_text(4, 18, properties["message"])
+            display_text(4, 18, properties["message"])
             for row in range(5, 8):
                 for col in range(0, 10):
                     if row < len(tile_map) and col < len(tile_map[row]):
@@ -386,8 +418,8 @@ def open_gui():
             ser.write(b'\x0E')  # Sélection du jeu de caractères G1
 
             render_map()
-            draw_player(player_x, player_y, key_direction_map.get('S'))
             if map_properties: execute_scripts(map_properties)
+            draw_player(player_x, player_y, key_direction_map.get('S'))
 
             threading.Thread(target=handle_keys, daemon=True).start()
             log_message("Serial connection established.")
@@ -441,24 +473,7 @@ def open_gui():
 
     apply_model_settings()
 
-    log_message(f"Minitel RS232/USB Telnet Interface v{version}")
-    log_message("---")
-    log_message("To switch modes on your Minitel :")
-    log_message("Fnct + T, V = Teletel videotex CEPT profile 2 25×40")
-    log_message("Fnct + T, A = Telematic ISO 6429 American ASCII 25×80 characters")
-    log_message("Fnct + T, F = Telematic ISO 6429 French ASCII 25×80 characters")
-    log_message("")
-    log_message("In Telematic mode :")
-    log_message("Fnct + T, E = reverse local echo rule")
-    log_message("Ctrl + J = line feed")
-    log_message("Ctrl + H = backspace")
-    log_message("Ctrl + I = horizontal tabulation")
-    log_message("Ctrl + K = vertical tabulation")
-    log_message("Ctrl + ← = erase character")
-    log_message("Ctrl + X = erase line")
-    log_message("↲ = carriage return")
-    log_message("")
-    log_message("Please consult the Minitel user manual for more information.")
+    log_message(f"Minitel RPG v{version}")
     log_message("---")
 
     window.mainloop()
