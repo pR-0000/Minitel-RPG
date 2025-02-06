@@ -19,7 +19,7 @@ import xml.etree.ElementTree as ET
 
 version = 0.11
 
-INITIAL_MAP = "map2.tmx"
+INITIAL_MAP = "map1.tmx"
 
 TILE_WIDTH, TILE_HEIGHT = 8, 9
 X_STEP, Y_STEP = TILE_WIDTH // 2, TILE_HEIGHT // 3
@@ -189,19 +189,20 @@ def open_gui():
             log_message("Fcnt + P, 9: 9600 bits/s")
 
     def get_tile_data(x, y, tile_index):
-        tile = tiles[tile_index-1]
+        tile = tiles[tile_index-1]  # Récupération de la tuile
         data = b""
+
         for tile_row, tile_line in enumerate(tile):
-            screen_y = y * Y_STEP + tile_row# + 1
-            screen_x = x * X_STEP + 1
+            screen_y = y * Y_STEP + tile_row  # Calcul de la position en lignes
+            screen_x = x * X_STEP + 1  # Calcul de la position en colonnes
+            color_code = bytes.fromhex(tile[0][0])
             tile_bytes = b''.join(bytes.fromhex(value) for value in tile_line)
-            data += f"\x1B[{screen_y};{screen_x}H".encode('utf-8') + tile_bytes
+            data += b'\x1F' + bytes([64 + screen_y]) + bytes([64 + screen_x]) + b'\x0E' + color_code + tile_bytes # vérifier s'il faut inclure le clignotement à cet endroit pour que ça fonctionne aussi
         return data
 
     def render_map():
         if ser and ser.is_open:
             ser.write(b'\x0C')  # Efface l'écran
-            ser.write(b'\x0E')  # Sélection du jeu de caractères G1
             data = b""
             
             for row in range(SCREEN_TILES_HEIGHT):
@@ -224,13 +225,12 @@ def open_gui():
             data = b""
             for row_idx, row in enumerate(sprite[1:]):
                 for col_idx, hex_code in enumerate(row):
-                    data += f"\x1B[{y * Y_STEP + row_idx + 1};{x * X_STEP + col_idx + 1}H".encode('utf-8')
+                    data += b'\x1F' + bytes([64 + (y * Y_STEP + row_idx + 1)]) + bytes([64 + (x * X_STEP + col_idx + 1)]) + b'\x0E'
                     data += bytes.fromhex(hex_code)
             ser.write(data)
 
     def draw_box(x, y, width, height):
         if ser and ser.is_open:
-            ser.write(b'\x0E')  # Sélection du jeu de caractères G1
             data = b""
             tiles = {
                 "top_left": 68,
@@ -243,18 +243,15 @@ def open_gui():
                 "bottom": 89,
                 "bottom_right": 90,
             }
-            data += f"\x1B[{y * Y_STEP};{x * X_STEP}H".encode('utf-8')
             data += get_tile_data(x, y, tiles["top_left"])
             for col in range(1, width - 1):
                 data += get_tile_data(x + col, y, tiles["top"])
             data += get_tile_data(x + width - 1, y, tiles["top_right"])
             for row in range(1, height - 1):
-                data += f"\x1B[{(y + row) * Y_STEP};{x * X_STEP}H".encode('utf-8')
                 data += get_tile_data(x, y + row, tiles["left"])
                 for col in range(1, width - 1):
                     data += get_tile_data(x + col, y + row, tiles["middle"])
                 data += get_tile_data(x + width - 1, y + row, tiles["right"])
-            data += f"\x1B[{(y + height - 1) * Y_STEP};{x * X_STEP}H".encode('utf-8')
             data += get_tile_data(x, y + height - 1, tiles["bottom_left"])
             for col in range(1, width - 1):
                 data += get_tile_data(x + col, y + height - 1, tiles["bottom"])
@@ -277,7 +274,7 @@ def open_gui():
         ser.write(b'\x0F')  # Mode texte
         ser.write(b'\x1B\x47')  # Caractères blancs
         current_x, current_y = x, y
-        ser.write(f"\x1B[{current_y};{current_x}H".encode("ascii"))
+        ser.write(b'\x1F' + bytes([64 + current_y]) + bytes([64 + current_x]))
         words = text.split(" ")
         buffer = ""
         for i, word in enumerate(words):
@@ -285,7 +282,7 @@ def open_gui():
             if len(buffer) + len(word) > line_width:
                 buffer = ""
                 current_y += 1
-                ser.write(f"\x1B[{current_y};{x}H".encode("ascii"))
+                ser.write(b'\x1F' + bytes([64 + current_y]) + bytes([64 + current_x]))
             # Gestion des pauses (~N)
             if word.startswith("~"):
                 try:
@@ -311,8 +308,6 @@ def open_gui():
             time.sleep(speed)
             buffer += word+" "
         ser.write(f"\x1B\x48\x08\x7F\x1B\x49\x0E".encode('utf-8'))
-        #ser.write(f"\x1B\x48\x1B[{current_y};{current_x}H\x7F\x1B\x49\x0E".encode('utf-8'))
-        #ser.write(b'\x0E\x1B\x48'+get_tile_data(8, 6, 60)+b'\x1B\x49')  # Jeu de caractères mosaïque G1 + affichage icône touche entrée clignotante
         while True:
             key_data = ser.read(1)
             if key_data.decode('utf-8', errors='ignore') == '\r':
