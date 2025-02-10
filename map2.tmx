@@ -1,28 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="left-up" width="10" height="8" tilewidth="8" tileheight="9" infinite="0" nextlayerid="4" nextobjectid="6">
- <properties>
-  <property name="assign" value="initial_message = True"/>
-  <property name="condition" value="initial_message == False"/>
-  <property name="message" value="hello world this is a test hello world this is a test hello world this is a test"/>
- </properties>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="left-up" width="10" height="8" tilewidth="8" tileheight="9" infinite="0" nextlayerid="5" nextobjectid="8">
  <tileset firstgid="1" source="tiles.tsx"/>
- <layer id="1" name="Calque de Tuiles 1" width="10" height="8">
-  <data encoding="csv">
-121,121,121,121,123,126,121,121,121,121,
-121,121,121,123,129,129,126,121,121,121,
-121,121,123,129,131,132,129,126,121,121,
-121,122,128,128,141,142,128,128,127,121,
-124,104,98,1,105,106,1,1,99,125,
-98,114,1,1,115,116,1,1,1,96,
-1,1,1,1,1,1,1,1,1,99,
-112,12,112,112,112,112,112,112,112,112
-</data>
- </layer>
  <objectgroup id="3" name="Calque d'Objets 1">
-  <object id="1" gid="106" x="40" y="45" width="8" height="9">
+  <object id="6" name="warp" x="0" y="36" width="8" height="9">
    <properties>
-    <property name="message" value="hello world"/>
+    <property name="warp" value="map1.tmx;8;5;Q"/>
+   </properties>
+  </object>
+  <object id="7" name="warp" x="56" y="36" width="8" height="9">
+   <properties>
+    <property name="warp" value="map3.tmx;1;6;D"/>
    </properties>
   </object>
  </objectgroup>
+ <layer id="1" name="Calque de Tuiles 1" width="10" height="8">
+  <data encoding="csv">
+1,1,1,1,135,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,
+91,92,120,92,92,92,92,92,93,1,
+101,143,130,143,143,143,143,143,16,1,
+13,1,1,1,1,1,1,15,17,1,
+101,136,1,1,1,1,1,1,18,1,
+111,112,112,112,112,112,112,112,113,1,
+1,1,1,1,1,1,1,1,1,1
+</data>
+ </layer>
 </map>

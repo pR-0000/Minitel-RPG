@@ -19,7 +19,7 @@ import xml.etree.ElementTree as ET
 
 version = 0.11
 
-INITIAL_MAP = "map1.tmx"
+INITIAL_MAP = "map0.tmx"
 
 TILE_WIDTH, TILE_HEIGHT = 8, 9
 X_STEP, Y_STEP = TILE_WIDTH // 2, TILE_HEIGHT // 3
@@ -37,7 +37,7 @@ key_direction_map = {
 }
 
 variables = {
-    "initial_message": "False"
+    "wakeup_message": "False"
 }
 
 from image_to_G1_converter import *
@@ -131,6 +131,7 @@ tile_properties = map_data["tile_properties"]
 objects = map_data["objects"]
 
 def open_gui():
+    global map_data, tile_map, map_properties, tile_properties, objects, player_x, player_y, player_direction
     window = tk.Tk()
     window.title("Minitel RS232/USB - Jeu")
     window.geometry("400x600")
@@ -218,6 +219,7 @@ def open_gui():
             ser.write(data)
 
     def draw_player(x, y, direction_index):
+        global sprite_player
         if ser and ser.is_open:
             sprite = sprite_player[direction_index]
             color_code = sprite[0][0]
@@ -314,6 +316,7 @@ def open_gui():
                 break
 
     def execute_scripts(properties):
+        global map_data, tile_map, map_properties, tile_properties, objects, player_x, player_y, player_direction
         if "condition" in properties:
             condition = properties["condition"]
             variable, expected_value = condition.split("==")
@@ -341,18 +344,21 @@ def open_gui():
             variables[variable] = value
             print(variables.get(variable))
 
-##        if "warp" in properties:
-##            warp_data = properties["warp"]
-##            parts = warp_data.split(";")
-##            new_map, new_x, new_y = parts[0], int(parts[1]), int(parts[2])
-##            load_new_map(new_map)
-##            global player_x, player_y
-##            player_x, player_y = new_x, new_y
-##            render_map()
-##            draw_player(player_x, player_y, key_direction_map.get('S'))
+        if "warp" in properties:
+            warp_data = properties["warp"]
+            parts = warp_data.split(";")
+            map_data = load_tmx_map_csv(parts[0])
+            tile_map = map_data["map"]
+            map_properties = map_data["map_properties"]
+            tile_properties = map_data["tile_properties"]
+            objects = map_data["objects"]
+            render_map()
+            player_x, player_y, player_direction = int(parts[1]), int(parts[2]), key_direction_map.get(parts[3])
+            draw_player(player_x, player_y, player_direction)
+            if map_properties: execute_scripts(map_properties)
 
     def handle_keys():
-        global player_x, player_y, player_direction
+        global tile_map, objects, player_x, player_y, player_direction
         while True:
             if ser and ser.is_open:
                 key_data = ser.read(1)
@@ -378,18 +384,26 @@ def open_gui():
                         ser.write(get_tile_data(player_x, player_y, tile_map[player_y][player_x]))
                         if tile_map[player_y][player_x+1] < WALKABLE_TILE_LIMIT: player_x += 1
                         draw_player(player_x, player_y, player_direction)
-                    elif key == '\r':
+                    elif key == '\r': # events in front of player
                         for obj in objects:
                             obj_x = int(obj["x"] // TILE_WIDTH)
                             obj_y = int(obj["y"] // TILE_HEIGHT)
-                            if obj_x == player_x+(player_direction == 1)-(player_direction == 0) and obj_y-1 == player_y+(player_direction == 2)-(player_direction == 3):
+                            if obj_x == player_x+(player_direction == 1)-(player_direction == 0) and obj_y == player_y+(player_direction == 2)-(player_direction == 3):
+                                properties = obj.get("properties", {})
+                                if properties:
+                                    execute_scripts(properties)
+                    if key in ['Z', 'S', 'Q', 'D']: # walkable events
+                        for obj in objects:
+                            obj_x = int(obj["x"] // TILE_WIDTH)
+                            obj_y = int(obj["y"] // TILE_HEIGHT)
+                            if obj_x == player_x and obj_y == player_y:
                                 properties = obj.get("properties", {})
                                 if properties:
                                     execute_scripts(properties)
             time.sleep(0.1)
 
     def start_connection():
-        global ser, connection_active
+        global ser, connection_active, map_properties
         if connection_active:
             stop_connection()
             return
@@ -411,10 +425,11 @@ def open_gui():
             ser.write(b'\x14')  # Masquer le curseur
             ser.write(b'\x0C')  # Efface l'écran
             ser.write(b'\x0E')  # Sélection du jeu de caractères G1
+            ser.write(b'\x1B\x3A\x6A\x43') # Activer le mode page/désactiver le mode rouleau
 
             render_map()
             if map_properties: execute_scripts(map_properties)
-            draw_player(player_x, player_y, key_direction_map.get('S'))
+            #draw_player(player_x, player_y, key_direction_map.get('S'))
 
             threading.Thread(target=handle_keys, daemon=True).start()
             log_message("Serial connection established.")
